@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+psycopg[binary]
+psycopg-pool
+python-dotenv
+requests
+streamlit
+pandas
