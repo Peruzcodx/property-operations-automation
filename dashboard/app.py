@@ -31,13 +31,15 @@ st.markdown(
     """
     <style>
 
-    /* Sidebar */
     [data-testid="stSidebar"] {
-        background-color: #171b21;
+    background-color: #171b21;
+    width: 230px;
+    min-width: 230px;
+    max-width: 230px;
     }
 
     [data-testid="stSidebarContent"] {
-        padding-top: 1.5rem;
+        padding-top: 0.8rem;
     }
 
     /* Navigation buttons */
@@ -45,7 +47,7 @@ st.markdown(
         width: 100%;
         min-height: 44px;
         border-radius: 8px;
-        font-size: 18px;
+        font-size: 17px;
         font-weight: 500;
         text-align: left;
         padding: 0.6rem 0.85rem;
@@ -71,7 +73,7 @@ st.markdown(
 
     /* Sidebar brand */
     .sidebar-brand {
-        font-size: 28px;
+        font-size: 34px;
         font-weight: 700;
         color: #ffffff;
         margin-bottom: 2px;
@@ -89,6 +91,22 @@ st.markdown(
         color: #ffffff;
         letter-spacing: 0.05em;
         margin-bottom: 9px;
+    }
+
+    /* Reduce the empty space above the page title */
+    .block-container {
+        padding-top: 2rem;
+    }
+
+    /* Sidebar width on phone-sized screens — wide enough to read
+       comfortably, matching the drawer-style sidebar Streamlit uses
+       on mobile by default */
+    @media (max-width: 640px) {
+        [data-testid="stSidebar"] {
+            width: 260px !important;
+            min-width: 260px !important;
+            max-width: 260px !important;
+        }
     }
 
     </style>
