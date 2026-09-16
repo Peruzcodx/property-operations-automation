@@ -1,7 +1,12 @@
 import os
+
 import requests
 import streamlit as st
 
+
+# =========================================================
+# API CONFIGURATION
+# =========================================================
 
 try:
     API_BASE_URL = st.secrets["API_BASE_URL"]
@@ -11,109 +16,249 @@ except (KeyError, st.errors.StreamlitSecretNotFoundError):
         "http://127.0.0.1:8000",
     )
 
+
+# Render's free tier can take some time to wake after inactivity.
+API_TIMEOUT = 30
+GET_RETRIES = 2
+
+
+# =========================================================
+# SHARED API REQUEST HANDLER
+# =========================================================
+
+def api_request(
+    method: str,
+    endpoint: str,
+    *,
+    allow_retry: bool = False,
+    **kwargs,
+):
+    """
+    Send a request to the FastAPI backend.
+
+    GET requests may retry once to tolerate a Render cold start.
+
+    POST/PATCH requests are never retried automatically to avoid
+    accidentally submitting the same write operation twice.
+
+    Returns:
+        requests.Response | None
+    """
+
+    url = f"{API_BASE_URL}{endpoint}"
+
+    attempts = GET_RETRIES if allow_retry else 1
+
+    for attempt in range(attempts):
+
+        try:
+            response = requests.request(
+                method,
+                url,
+                timeout=API_TIMEOUT,
+                **kwargs,
+            )
+
+            response.raise_for_status()
+
+            return response
+
+        except requests.exceptions.Timeout:
+
+            if attempt < attempts - 1:
+                continue
+
+            st.warning(
+                "The system is taking longer than expected to respond. "
+                "Please refresh the page and try again."
+            )
+            return None
+
+        except requests.exceptions.ConnectionError:
+
+            if attempt < attempts - 1:
+                continue
+
+            st.warning(
+                "We couldn't connect to the system right now. "
+                "Please refresh the page and try again."
+            )
+            return None
+
+        except requests.exceptions.HTTPError as exc:
+
+            response = exc.response
+
+            if response is not None:
+
+                try:
+                    detail = response.json().get(
+                        "detail",
+                        "The backend rejected the request.",
+                    )
+
+                except (ValueError, AttributeError):
+                    detail = (
+                        f"The backend returned "
+                        f"HTTP {response.status_code}."
+                    )
+
+            else:
+                detail = "The backend rejected the request."
+
+            st.error(
+                f"Unable to complete the request: {detail}"
+            )
+            return None
+
+        except requests.exceptions.RequestException:
+
+            st.error(
+                "Something went wrong while communicating "
+                "with the backend. Please try again."
+            )
+            return None
+
+        except Exception:
+
+            st.error(
+                "An unexpected problem occurred while "
+                "communicating with the backend."
+            )
+            return None
+
+    return None
+
+
 # =========================================================
 # READ OPERATIONS
 # =========================================================
-
 @st.cache_data(ttl=30)
 def get_properties():
-    response = requests.get(
-        f"{API_BASE_URL}/properties/",
-        timeout=10,
+    response = api_request(
+        "GET",
+        "/properties/",
+        allow_retry=True,
     )
-    response.raise_for_status()
+
+    if response is None:
+        return []
 
     data = response.json()
 
     return data["properties"]
 
-
 @st.cache_data(ttl=30)
 def get_property(property_id: int):
-    response = requests.get(
-        f"{API_BASE_URL}/properties/{property_id}",
-        timeout=10,
+
+    response = api_request(
+        "GET",
+        f"/properties/{property_id}",
+        allow_retry=True,
     )
-    response.raise_for_status()
+
+    if response is None:
+        return None
 
     return response.json()
 
 
 @st.cache_data(ttl=30)
 def get_units():
-    response = requests.get(
-        f"{API_BASE_URL}/units/",
-        timeout=10,
+
+    response = api_request(
+        "GET",
+        "/units/",
+        allow_retry=True,
     )
-    response.raise_for_status()
+
+    if response is None:
+        return []
 
     return response.json()
 
 
 @st.cache_data(ttl=30)
 def get_tenants():
-    response = requests.get(
-        f"{API_BASE_URL}/tenants/",
-        timeout=10,
+
+    response = api_request(
+        "GET",
+        "/tenants/",
+        allow_retry=True,
     )
-    response.raise_for_status()
+
+    if response is None:
+        return []
 
     return response.json()
 
 
 @st.cache_data(ttl=30)
 def get_inspections():
-    response = requests.get(
-        f"{API_BASE_URL}/inspections/",
-        timeout=10,
+
+    response = api_request(
+        "GET",
+        "/inspections/",
+        allow_retry=True,
     )
-    response.raise_for_status()
+
+    if response is None:
+        return []
 
     return response.json()
 
 
 @st.cache_data(ttl=15)
 def get_maintenance():
-    response = requests.get(
-        f"{API_BASE_URL}/maintenance/",
-        timeout=10,
+
+    response = api_request(
+        "GET",
+        "/maintenance/",
+        allow_retry=True,
     )
-    response.raise_for_status()
+
+    if response is None:
+        return []
 
     return response.json()
 
 
 @st.cache_data(ttl=30)
 def get_rent():
-    response = requests.get(
-        f"{API_BASE_URL}/rent/",
-        timeout=10,
+
+    response = api_request(
+        "GET",
+        "/rent/",
+        allow_retry=True,
     )
-    response.raise_for_status()
+
+    if response is None:
+        return []
 
     return response.json()
 
 
 @st.cache_data(ttl=15)
 def get_property_overview(property_id: int):
-    response = requests.get(
-        f"{API_BASE_URL}/properties/{property_id}/overview",
-        timeout=10,
+
+    response = api_request(
+        "GET",
+        f"/properties/{property_id}/overview",
+        allow_retry=True,
     )
-    response.raise_for_status()
+
+    if response is None:
+        return None
 
     return response.json()
 
 
 # =========================================================
 # PROPERTY-SPECIFIC READ OPERATIONS
-#
-# These are still available for other dashboard pages.
-# The property detail page now uses get_property_overview()
-# instead of making multiple API requests.
 # =========================================================
 
 def get_units_by_property(property_id: int):
+
     units = get_units()
 
     return [
@@ -124,6 +269,7 @@ def get_units_by_property(property_id: int):
 
 
 def get_tenants_by_property(property_id: int):
+
     units = get_units_by_property(property_id)
 
     unit_ids = {
@@ -141,6 +287,7 @@ def get_tenants_by_property(property_id: int):
 
 
 def get_inspections_by_property(property_id: int):
+
     units = get_units_by_property(property_id)
 
     unit_ids = {
@@ -158,6 +305,7 @@ def get_inspections_by_property(property_id: int):
 
 
 def get_maintenance_by_property(property_id: int):
+
     units = get_units_by_property(property_id)
 
     unit_ids = {
@@ -175,6 +323,7 @@ def get_maintenance_by_property(property_id: int):
 
 
 def get_rent_by_property(property_id: int):
+
     units = get_units_by_property(property_id)
 
     unit_ids = {
@@ -200,17 +349,19 @@ def create_property(
     address: str,
     property_type: str,
 ):
-    response = requests.post(
-        f"{API_BASE_URL}/properties/",
+
+    response = api_request(
+        "POST",
+        "/properties/",
         json={
             "property_name": property_name,
             "address": address,
             "property_type": property_type,
         },
-        timeout=10,
     )
 
-    response.raise_for_status()
+    if response is None:
+        return None
 
     st.cache_data.clear()
 
@@ -221,16 +372,18 @@ def create_unit(
     property_id: int,
     unit_name: str,
 ):
-    response = requests.post(
-        f"{API_BASE_URL}/units/",
+
+    response = api_request(
+        "POST",
+        "/units/",
         json={
             "property_id": property_id,
             "unit_name": unit_name,
         },
-        timeout=10,
     )
 
-    response.raise_for_status()
+    if response is None:
+        return None
 
     st.cache_data.clear()
 
@@ -243,18 +396,20 @@ def create_tenant(
     email: str,
     phone: str,
 ):
-    response = requests.post(
-        f"{API_BASE_URL}/tenants/",
+
+    response = api_request(
+        "POST",
+        "/tenants/",
         json={
             "unit_id": unit_id,
             "name": name,
             "email": email,
             "phone": phone,
         },
-        timeout=10,
     )
 
-    response.raise_for_status()
+    if response is None:
+        return None
 
     st.cache_data.clear()
 
@@ -269,8 +424,10 @@ def create_inspection(
     condition_notes: str | None = None,
     flagged_issue: str | None = None,
 ):
-    response = requests.post(
-        f"{API_BASE_URL}/inspections/",
+
+    response = api_request(
+        "POST",
+        "/inspections/",
         json={
             "unit_id": unit_id,
             "inspection_type": inspection_type,
@@ -279,10 +436,10 @@ def create_inspection(
             "condition_notes": condition_notes,
             "flagged_issue": flagged_issue,
         },
-        timeout=10,
     )
 
-    response.raise_for_status()
+    if response is None:
+        return None
 
     st.cache_data.clear()
 
@@ -297,8 +454,10 @@ def create_maintenance_request(
     priority: str,
     assigned_contractor: str | None = None,
 ):
-    response = requests.post(
-        f"{API_BASE_URL}/maintenance/",
+
+    response = api_request(
+        "POST",
+        "/maintenance/",
         json={
             "unit_id": unit_id,
             "inspection_id": inspection_id,
@@ -307,10 +466,10 @@ def create_maintenance_request(
             "priority": priority,
             "assigned_contractor": assigned_contractor,
         },
-        timeout=10,
     )
 
-    response.raise_for_status()
+    if response is None:
+        return None
 
     st.cache_data.clear()
 
@@ -326,8 +485,10 @@ def create_rent(
     payment_date: str | None = None,
     notes: str | None = None,
 ):
-    response = requests.post(
-        f"{API_BASE_URL}/rent/",
+
+    response = api_request(
+        "POST",
+        "/rent/",
         json={
             "unit_id": unit_id,
             "tenant_id": tenant_id,
@@ -337,10 +498,10 @@ def create_rent(
             "payment_date": payment_date,
             "notes": notes,
         },
-        timeout=10,
     )
 
-    response.raise_for_status()
+    if response is None:
+        return None
 
     st.cache_data.clear()
 
@@ -358,18 +519,20 @@ def update_maintenance_request(
     status: str | None = None,
     resolution_notes: str | None = None,
 ):
-    response = requests.patch(
-        f"{API_BASE_URL}/maintenance/{maintenance_id}",
+
+    response = api_request(
+        "PATCH",
+        f"/maintenance/{maintenance_id}",
         json={
             "priority": priority,
             "assigned_contractor": assigned_contractor,
             "status": status,
             "resolution_notes": resolution_notes,
         },
-        timeout=10,
     )
 
-    response.raise_for_status()
+    if response is None:
+        return None
 
     st.cache_data.clear()
 
@@ -382,8 +545,10 @@ def update_rent(
     payment_date: str | None = None,
     notes: str | None = None,
 ):
-    response = requests.patch(
-        f"{API_BASE_URL}/rent/{rent_id}",
+
+    response = api_request(
+        "PATCH",
+        f"/rent/{rent_id}",
         json={
             "amount_paid": (
                 str(amount_paid)
@@ -393,22 +558,45 @@ def update_rent(
             "payment_date": payment_date,
             "notes": notes,
         },
-        timeout=10,
     )
 
-    response.raise_for_status()
+    if response is None:
+        return None
 
     st.cache_data.clear()
 
     return response.json()
 
+
+# =========================================================
+# DASHBOARD SUMMARY
+# =========================================================
+
 @st.cache_data(ttl=15)
 def get_dashboard_summary():
-    response = requests.get(
-        f"{API_BASE_URL}/properties/dashboard-summary",
-        timeout=10,
+
+    response = api_request(
+        "GET",
+        "/properties/dashboard-summary",
+        allow_retry=True,
     )
 
-    response.raise_for_status()
+    if response is None:
+        return {
+            "properties_count": 0,
+            "units_count": 0,
+            "tenants_count": 0,
+            "maintenance": {
+                "open": 0,
+                "in_progress": 0,
+                "resolved": 0,
+            },
+            "rent": {
+                "paid": 0,
+                "partial": 0,
+                "pending": 0,
+                "outstanding": 0,
+            },
+        }
 
     return response.json()
