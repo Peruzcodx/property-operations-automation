@@ -1,7 +1,6 @@
 from decimal import Decimal
 
 import streamlit as st
-
 from api import (
     get_properties,
     get_property_overview,
@@ -10,6 +9,7 @@ from api import (
     create_tenant,
     create_inspection,
     create_maintenance_request,
+    create_rent,
 )
 
 
@@ -212,10 +212,11 @@ def show_property_detail(property_id: int):
     inspections = overview["inspections"]
     maintenance = overview["maintenance"]
     rent = overview["rent"]
-
     # ---------------------------------------------------------
     # Back button
     # ---------------------------------------------------------
+    st.write("")
+
     if st.button("← Back to Properties"):
         st.session_state.pop(
             "selected_property_id",

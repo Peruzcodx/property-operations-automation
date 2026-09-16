@@ -1,12 +1,7 @@
 import os
-
 import requests
 import streamlit as st
 
-
-# =========================================================
-# API CONFIGURATION
-# =========================================================
 
 try:
     API_BASE_URL = st.secrets["API_BASE_URL"]
@@ -17,119 +12,45 @@ except (KeyError, st.errors.StreamlitSecretNotFoundError):
     )
 
 
-# Render's free tier can take some time to wake after inactivity.
 API_TIMEOUT = 30
-GET_RETRIES = 2
 
-
-# =========================================================
-# SHARED API REQUEST HANDLER
-# =========================================================
 
 def api_request(
     method: str,
     endpoint: str,
-    *,
-    allow_retry: bool = False,
     **kwargs,
 ):
-    """
-    Send a request to the FastAPI backend.
+    try:
+        response = requests.request(
+            method,
+            f"{API_BASE_URL}{endpoint}",
+            timeout=API_TIMEOUT,
+            **kwargs,
+        )
 
-    GET requests may retry once to tolerate a Render cold start.
+        response.raise_for_status()
 
-    POST/PATCH requests are never retried automatically to avoid
-    accidentally submitting the same write operation twice.
+        return response
 
-    Returns:
-        requests.Response | None
-    """
+    except requests.exceptions.Timeout:
+        st.warning(
+            "The backend is taking longer than usual to respond. "
+            "Please try again in a moment."
+        )
+        return None
 
-    url = f"{API_BASE_URL}{endpoint}"
+    except requests.exceptions.ConnectionError:
+        st.warning(
+            "The backend is currently unavailable. "
+            "Please try again in a moment."
+        )
+        return None
 
-    attempts = GET_RETRIES if allow_retry else 1
-
-    for attempt in range(attempts):
-
-        try:
-            response = requests.request(
-                method,
-                url,
-                timeout=API_TIMEOUT,
-                **kwargs,
-            )
-
-            response.raise_for_status()
-
-            return response
-
-        except requests.exceptions.Timeout:
-
-            if attempt < attempts - 1:
-                continue
-
-            st.warning(
-                "The system is taking longer than expected to respond. "
-                "Please refresh the page and try again."
-            )
-            return None
-
-        except requests.exceptions.ConnectionError:
-
-            if attempt < attempts - 1:
-                continue
-
-            st.warning(
-                "We couldn't connect to the system right now. "
-                "Please refresh the page and try again."
-            )
-            return None
-
-        except requests.exceptions.HTTPError as exc:
-
-            response = exc.response
-
-            if response is not None:
-
-                try:
-                    detail = response.json().get(
-                        "detail",
-                        "The backend rejected the request.",
-                    )
-
-                except (ValueError, AttributeError):
-                    detail = (
-                        f"The backend returned "
-                        f"HTTP {response.status_code}."
-                    )
-
-            else:
-                detail = "The backend rejected the request."
-
-            st.error(
-                f"Unable to complete the request: {detail}"
-            )
-            return None
-
-        except requests.exceptions.RequestException:
-
-            st.error(
-                "Something went wrong while communicating "
-                "with the backend. Please try again."
-            )
-            return None
-
-        except Exception:
-
-            st.error(
-                "An unexpected problem occurred while "
-                "communicating with the backend."
-            )
-            return None
-
-    return None
-
-
+    except requests.exceptions.RequestException as exc:
+        st.error(
+            f"Unable to complete the request: {exc}"
+        )
+        return None
 # =========================================================
 # READ OPERATIONS
 # =========================================================
@@ -138,7 +59,6 @@ def get_properties():
     response = api_request(
         "GET",
         "/properties/",
-        allow_retry=True,
     )
 
     if response is None:
@@ -147,14 +67,13 @@ def get_properties():
     data = response.json()
 
     return data["properties"]
-
 @st.cache_data(ttl=30)
 def get_property(property_id: int):
 
     response = api_request(
         "GET",
         f"/properties/{property_id}",
-        allow_retry=True,
+      
     )
 
     if response is None:
@@ -169,7 +88,7 @@ def get_units():
     response = api_request(
         "GET",
         "/units/",
-        allow_retry=True,
+        
     )
 
     if response is None:
@@ -184,7 +103,7 @@ def get_tenants():
     response = api_request(
         "GET",
         "/tenants/",
-        allow_retry=True,
+      
     )
 
     if response is None:
@@ -199,7 +118,7 @@ def get_inspections():
     response = api_request(
         "GET",
         "/inspections/",
-        allow_retry=True,
+       
     )
 
     if response is None:
@@ -214,7 +133,7 @@ def get_maintenance():
     response = api_request(
         "GET",
         "/maintenance/",
-        allow_retry=True,
+     
     )
 
     if response is None:
@@ -229,7 +148,7 @@ def get_rent():
     response = api_request(
         "GET",
         "/rent/",
-        allow_retry=True,
+        
     )
 
     if response is None:
@@ -244,7 +163,7 @@ def get_property_overview(property_id: int):
     response = api_request(
         "GET",
         f"/properties/{property_id}/overview",
-        allow_retry=True,
+        
     )
 
     if response is None:
@@ -578,7 +497,6 @@ def get_dashboard_summary():
     response = api_request(
         "GET",
         "/properties/dashboard-summary",
-        allow_retry=True,
     )
 
     if response is None:

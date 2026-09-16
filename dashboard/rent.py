@@ -1,3 +1,4 @@
+
 from datetime import datetime
 from decimal import Decimal
 import io
@@ -10,6 +11,7 @@ from api import (
     get_units,
     get_tenants,
     update_rent,
+    create_rent,
 )
 
 
@@ -32,21 +34,16 @@ def format_date(value):
 # =========================================================
 # RENT PAGE
 # =========================================================
-
 def show_rent_page():
+
     st.title("Rent")
     st.caption("Rent and payment management")
 
+    # =====================================================
+    # LOAD RENT, UNIT AND TENANT DATA
+    # =====================================================
+
     rent_records = get_rent()
-
-    if not rent_records:
-        st.info("No rent records found.")
-        return
-
-    # =====================================================
-    # LOAD UNIT AND TENANT NAMES
-    # =====================================================
-
     units = get_units()
     tenants = get_tenants()
 
@@ -59,6 +56,246 @@ def show_rent_page():
         tenant["id"]: tenant["name"]
         for tenant in tenants
     }
+
+    # =====================================================
+    # FIND TENANTS WITHOUT RENT RECORDS
+    # =====================================================
+
+    rent_tenant_ids = {
+        record["tenant_id"]
+        for record in rent_records
+    }
+
+    tenants_without_rent = [
+        tenant
+        for tenant in tenants
+        if tenant["id"] not in rent_tenant_ids
+    ]
+
+    # =====================================================
+    # TENANTS WITHOUT RENT RECORDS
+    # =====================================================
+
+    if tenants_without_rent:
+
+        st.subheader("Tenants Without Rent Records")
+
+        st.caption(
+            "These tenants do not currently have a rent record."
+        )
+
+        for tenant in tenants_without_rent:
+
+            unit_name = unit_map.get(
+                tenant["unit_id"],
+                f"Unit {tenant['unit_id']}",
+            )
+
+            with st.container(border=True):
+
+                col1, col2, col3 = st.columns(
+                    [3, 2, 1]
+                )
+
+                with col1:
+
+                    st.markdown(
+                        f"**{tenant['name']}**"
+                    )
+
+                    st.caption(
+                        f"Tenant ID: {tenant['id']}"
+                    )
+
+                with col2:
+
+                    st.write(
+                        f"Unit: {unit_name}"
+                    )
+
+                    st.write(
+                        f"Email: {tenant['email']}"
+                    )
+
+                with col3:
+
+                    if st.button(
+                        "＋ Add Record",
+                        key=f"add_rent_{tenant['id']}",
+                        type="primary",
+                        width="stretch",
+                    ):
+                        st.session_state[
+                            "add_rent_for_tenant"
+                        ] = tenant["id"]
+
+                        st.rerun()
+
+    # =====================================================
+    # ADD RENT RECORD
+    # =====================================================
+
+    add_rent_tenant_id = st.session_state.get(
+        "add_rent_for_tenant"
+    )
+
+    if add_rent_tenant_id is not None:
+
+        selected_tenant = next(
+            (
+                tenant
+                for tenant in tenants
+                if tenant["id"] == add_rent_tenant_id
+            ),
+            None,
+        )
+
+        if selected_tenant:
+
+            selected_unit = next(
+                (
+                    unit
+                    for unit in units
+                    if unit["id"]
+                    == selected_tenant["unit_id"]
+                ),
+                None,
+            )
+
+            st.divider()
+
+            st.subheader("Add Rent Record")
+
+            st.write(
+                f"Tenant: **{selected_tenant['name']}**"
+            )
+
+            st.write(
+                f"Unit: **{selected_unit['unit_name']}**"
+                if selected_unit
+                else (
+                    f"Unit ID: "
+                    f"{selected_tenant['unit_id']}"
+                )
+            )
+
+            with st.form(
+                f"add_rent_form_{selected_tenant['id']}"
+            ):
+
+                rent_amount = st.number_input(
+                    "Rent Amount",
+                    min_value=0.0,
+                    step=1000.0,
+                )
+
+                due_date = st.date_input(
+                    "Due Date"
+                )
+
+                amount_paid = st.number_input(
+                    "Amount Paid",
+                    min_value=0.0,
+                    value=0.0,
+                    step=1000.0,
+                )
+
+                payment_date = st.date_input(
+                    "Payment Date",
+                    value=None,
+                )
+
+                notes = st.text_area(
+                    "Notes",
+                    placeholder="Optional",
+                )
+
+                col1, col2 = st.columns(2)
+
+                with col1:
+
+                    submitted = (
+                        st.form_submit_button(
+                            "Create Rent Record",
+                            type="primary",
+                            width="stretch",
+                        )
+                    )
+
+                with col2:
+
+                    cancelled = (
+                        st.form_submit_button(
+                            "Cancel",
+                            width="stretch",
+                        )
+                    )
+
+            if cancelled:
+
+                st.session_state.pop(
+                    "add_rent_for_tenant",
+                    None,
+                )
+
+                st.rerun()
+
+            if submitted:
+
+                if rent_amount <= 0:
+
+                    st.error(
+                        "Rent amount must be greater than zero."
+                    )
+
+                else:
+
+                    try:
+
+                        created = create_rent(
+                            unit_id=selected_tenant[
+                                "unit_id"
+                            ],
+                            tenant_id=selected_tenant[
+                                "id"
+                            ],
+                            rent_amount=Decimal(
+                                str(rent_amount)
+                            ),
+                            due_date=due_date.isoformat(),
+                            amount_paid=Decimal(
+                                str(amount_paid)
+                            ),
+                            payment_date=(
+                                payment_date.isoformat()
+                                if payment_date
+                                else None
+                            ),
+                            notes=(
+                                notes.strip()
+                                if notes.strip()
+                                else None
+                            ),
+                        )
+
+                        st.session_state.pop(
+                            "add_rent_for_tenant",
+                            None,
+                        )
+
+                        st.success(
+                            f"Rent record #{created['id']} "
+                            "was created successfully."
+                        )
+
+                        st.rerun()
+
+                    except Exception as error:
+
+                        st.error(
+                            f"Could not create rent record: "
+                            f"{error}"
+                        )
 
     # =====================================================
     # SUMMARY
@@ -130,6 +367,7 @@ def show_rent_page():
     left, right = st.columns([3, 1])
 
     with left:
+
         status_filter = st.selectbox(
             "Filter by payment status",
             [
@@ -143,6 +381,7 @@ def show_rent_page():
     filtered_records = rent_records
 
     if status_filter != "All":
+
         filtered_records = [
             record
             for record in rent_records
@@ -167,7 +406,9 @@ def show_rent_page():
                 str(record["amount_paid"])
             )
 
-            outstanding = rent_amount - amount_paid
+            outstanding = (
+                rent_amount - amount_paid
+            )
 
             export_rows.append(
                 {
@@ -196,7 +437,9 @@ def show_rent_page():
                 }
             )
 
-        export_df = pd.DataFrame(export_rows)
+        export_df = pd.DataFrame(
+            export_rows
+        )
 
         csv_buffer = io.StringIO()
 
@@ -220,18 +463,37 @@ def show_rent_page():
     st.subheader("Rent Records")
 
     if not filtered_records:
-        st.info("No rent records match this filter.")
+
+        if rent_records:
+
+            st.info(
+                "No rent records match this filter."
+            )
+
+        else:
+
+            st.info(
+                "No rent records found."
+            )
+
         return
 
     for record in filtered_records:
 
-        payment_status = record["payment_status"]
+        payment_status = record[
+            "payment_status"
+        ]
 
         if payment_status == "Paid":
+
             status_label = "🟢 Paid"
+
         elif payment_status == "Partial":
+
             status_label = "🟡 Partial"
+
         else:
+
             status_label = "🔴 Pending"
 
         rent_amount = Decimal(
@@ -242,7 +504,9 @@ def show_rent_page():
             str(record["amount_paid"])
         )
 
-        outstanding = rent_amount - amount_paid
+        outstanding = (
+            rent_amount - amount_paid
+        )
 
         unit_name = unit_map.get(
             record["unit_id"],
@@ -256,7 +520,9 @@ def show_rent_page():
 
         with st.container(border=True):
 
-            top_left, top_right = st.columns([3, 1])
+            top_left, top_right = st.columns(
+                [3, 1]
+            )
 
             with top_left:
 
@@ -279,26 +545,32 @@ def show_rent_page():
                 )
 
                 st.write(
-                    f"Due: {format_date(record['due_date'])}"
+                    f"Due: "
+                    f"{format_date(record['due_date'])}"
                 )
 
             # =================================================
             # AMOUNTS
             # =================================================
 
-            amount_col1, amount_col2, amount_col3 = st.columns(3)
+            amount_col1, amount_col2, amount_col3 = (
+                st.columns(3)
+            )
 
             with amount_col1:
+
                 st.write(
                     f"Rent: ₦{rent_amount:,.2f}"
                 )
 
             with amount_col2:
+
                 st.write(
                     f"Paid: ₦{amount_paid:,.2f}"
                 )
 
             with amount_col3:
+
                 st.write(
                     f"Outstanding: ₦{outstanding:,.2f}"
                 )
@@ -313,6 +585,7 @@ def show_rent_page():
             )
 
             if record["notes"]:
+
                 st.write(
                     f"Notes: {record['notes']}"
                 )
@@ -348,14 +621,17 @@ def show_rent_page():
                         value=record["notes"] or "",
                     )
 
-                    submitted = st.form_submit_button(
-                        "Update Payment",
-                        type="primary",
+                    submitted = (
+                        st.form_submit_button(
+                            "Update Payment",
+                            type="primary",
+                        )
                     )
 
                     if submitted:
 
                         try:
+
                             update_rent(
                                 rent_id=record["id"],
                                 amount_paid=Decimal(
@@ -380,6 +656,7 @@ def show_rent_page():
                             st.rerun()
 
                         except Exception as error:
+
                             st.error(
                                 f"Update failed: {error}"
                             )
