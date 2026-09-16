@@ -20,7 +20,11 @@ def root():
     return {
         "message": "Property Operations Automation API is running"
     }
-
+@app.get("/health")
+def health():
+    return {
+        "status": "ok"
+    }
 
 app.include_router(properties_router)
 app.include_router(units_router)
